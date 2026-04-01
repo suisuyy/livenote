@@ -1,0 +1,157 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId
+    // Fields:
+    //   - email: string (required)
+    //   - role: string (required, 'admin' or 'user')
+    //   - storageUsed: number (required, bytes)
+    //   - settings: map (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: users/{userId}/folders
+    // Document ID: folderId
+    // Fields:
+    //   - name: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: users/{userId}/notes
+    // Document ID: noteId
+    // Fields:
+    //   - folderId: string (required)
+    //   - title: string (required)
+    //   - content: string (required)
+    //   - attachments: list (optional)
+    //   - createdAt: timestamp (required)
+    //   - updatedAt: timestamp (required)
+    //
+    // Collection: files
+    // Document ID: sha256
+    // Fields:
+    //   - size: number (required)
+    //   - mimeType: string (required)
+    //   - uploadedBy: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "woiceatus@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['email', 'role', 'storageUsed', 'settings', 'createdAt']) &&
+             hasRequiredFields(['email', 'role', 'storageUsed', 'createdAt']) &&
+             isValidEmail(data.email) &&
+             data.role in ['admin', 'user'] &&
+             data.storageUsed is number && data.storageUsed >= 0 &&
+             data.createdAt is timestamp &&
+             (!('settings' in data) || data.settings is map);
+    }
+
+    function isValidFolder() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['name', 'createdAt']) &&
+             hasRequiredFields(['name', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidNote() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['folderId', 'title', 'content', 'attachments', 'createdAt', 'updatedAt']) &&
+             hasRequiredFields(['folderId', 'title', 'content', 'createdAt', 'updatedAt']) &&
+             data.folderId is string && data.folderId.size() > 0 && data.folderId.size() < 100 &&
+             data.title is string && data.title.size() >= 0 && data.title.size() < 200 &&
+             data.content is string && data.content.size() >= 0 && data.content.size() < 100000 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp &&
+             (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 50));
+    }
+
+    function isValidFileRecord() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['size', 'mimeType', 'uploadedBy', 'createdAt']) &&
+             hasRequiredFields(['size', 'mimeType', 'uploadedBy', 'createdAt']) &&
+             data.size is number && data.size > 0 && data.size <= 1073741824 &&
+             data.mimeType is string && data.mimeType.size() > 0 && data.mimeType.size() < 100 &&
+             data.uploadedBy is string && data.uploadedBy == request.auth.uid &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser() &&
+                    (request.resource.data.role == 'user' || isAdmin());
+      allow update: if isOwner(userId) && isValidUser() &&
+                    (request.resource.data.role == resource.data.role || isAdmin()) &&
+                    request.resource.data.email == resource.data.email &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAdmin();
+
+      match /folders/{folderId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidFolder();
+        allow update: if isOwner(userId) && isValidFolder() &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /notes/{noteId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidNote();
+        allow update: if isOwner(userId) && isValidNote() &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    match /files/{sha256} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidFileRecord();
+      allow update: if false; // File records are immutable
+      allow delete: if isAdmin();
+    }
+  }
+}

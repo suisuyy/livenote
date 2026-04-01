@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "storageUsed": { "type": "number", "description": "Total storage used in bytes" },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "theme": { "type": "string", "enum": ["light", "dark", "system"] }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "storageUsed", "createdAt"]
+    },
+    "Folder": {
+      "title": "Folder",
+      "description": "A folder to organize notes",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdAt"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "A note containing text and attachments",
+      "type": "object",
+      "properties": {
+        "folderId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sha256": { "type": "string" },
+              "name": { "type": "string" },
+              "size": { "type": "number" },
+              "mimeType": { "type": "string" }
+            },
+            "required": ["sha256", "name", "size", "mimeType"]
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["folderId", "title", "content", "createdAt", "updatedAt"]
+    },
+    "FileRecord": {
+      "title": "FileRecord",
+      "description": "A record of a file uploaded to storage, keyed by SHA-256",
+      "type": "object",
+      "properties": {
+        "size": { "type": "number" },
+        "mimeType": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["size", "mimeType", "uploadedBy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles and settings"
+    },
+    "users/{userId}/folders/{folderId}": {
+      "schema": { "$ref": "#/entities/Folder" },
+      "description": "User's folders"
+    },
+    "users/{userId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/Note" },
+      "description": "User's notes"
+    },
+    "files/{sha256}": {
+      "schema": { "$ref": "#/entities/FileRecord" },
+      "description": "Global file records for deduplication"
+    }
+  }
+}
