@@ -260,6 +260,8 @@ export default function LiveChat({
   const [folders, setFolders] = useState<Folder[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [recentNoteIds, setRecentNoteIds] = useState<string[]>([]);
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
   const [editProposal, setEditProposal] = useState<NoteEditProposal | null>(null);
   const [recentShot, setRecentShot] = useState<string | null>(null);
   const lastSyncedNoteContentRef = useRef<Record<string, string>>({});
@@ -276,6 +278,15 @@ export default function LiveChat({
   const [isRecordingVideo, setIsRecordingVideo] = useState(false);
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
   const [selectedGalleryItem, setSelectedGalleryItem] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (activeNoteId) {
+      setRecentNoteIds(prev => {
+        const filtered = prev.filter(id => id !== activeNoteId);
+        return [activeNoteId, ...filtered].slice(0, 5);
+      });
+    }
+  }, [activeNoteId]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<Blob[]>([]);
@@ -3038,224 +3049,268 @@ Active Note ID: ${activeNoteId || 'None'}`,
               className="bg-black border border-white/10 w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-              {/* Sidebar */}
-              <div className="w-64 bg-neutral-900/50 border-r border-white/10 flex flex-col shrink-0">
-                <div className="p-4 border-b border-white/5 flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Folders</span>
-                  <button 
-                    onClick={() => setIsCreatingFolder(true)}
-                    className="p-1.5 hover:bg-blue-600/20 text-blue-400 rounded-lg transition-colors"
-                    title="New Folder"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                  {isCreatingFolder && (
-                    <div className="px-2 py-2 mb-2 flex items-center gap-2 bg-black/20 rounded-lg border border-white/5">
-                      <input
-                        autoFocus
-                        type="text"
-                        value={newFolderName}
-                        onChange={e => setNewFolderName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && newFolderName.trim()) {
-                            const newFolder: Folder = { id: generateId(), name: newFolderName.trim(), createdAt: Date.now() };
-                            if (user) saveFolder(user.uid, newFolder);
-                            setActiveFolderId(newFolder.id);
-                            setNewFolderName('');
-                            setIsCreatingFolder(false);
-                          } else if (e.key === 'Escape') {
-                            setNewFolderName('');
-                            setIsCreatingFolder(false);
-                          }
-                        }}
-                        placeholder="Folder name..."
-                        className="flex-1 bg-transparent border-none px-1 text-sm text-white focus:outline-none min-w-0"
-                      />
-                      <button
-                        onClick={() => {
-                          if (newFolderName.trim()) {
-                            const newFolder: Folder = { id: generateId(), name: newFolderName.trim(), createdAt: Date.now() };
-                            if (user) saveFolder(user.uid, newFolder);
-                            setActiveFolderId(newFolder.id);
-                            setNewFolderName('');
-                            setIsCreatingFolder(false);
-                          }
-                        }}
-                        className="p-1 text-green-400 hover:bg-green-400/20 rounded shrink-0"
-                      >
-                        <Check className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setNewFolderName('');
-                          setIsCreatingFolder(false);
-                        }}
-                        className="p-1 text-neutral-400 hover:bg-white/10 rounded shrink-0"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
-
-                  {folders.map(folder => (
-                    <div key={folder.id} className="mb-1">
-                      <div 
-                        onClick={() => {
-                          if (activeFolderId !== folder.id) {
-                            setActiveFolderId(folder.id);
-                            const folderNotes = notes.filter(n => n.folderId === folder.id);
-                            if (folderNotes.length > 0) {
-                              setActiveNoteId(folderNotes[0].id);
-                            } else {
-                              setActiveNoteId(null);
-                            }
-                            handleDisconnect(true);
-                          }
-                        }}
-                        className={`w-full text-left px-3 py-2 text-sm cursor-pointer flex items-center justify-between group transition-all rounded-lg ${
-                          activeFolderId === folder.id ? 'bg-blue-600/20 text-blue-400 font-medium' : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 truncate">
-                          <FolderIcon className={`w-4 h-4 ${activeFolderId === folder.id ? 'text-blue-400' : 'opacity-50'}`} />
-                          <span className="truncate">{folder.name}</span>
-                        </div>
-                        {folder.id !== 'default' && (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (confirm(`Delete folder "${folder.name}" and all its notes?`)) {
-                                if (user) deleteFolder(user.uid, folder.id);
-                                const notesToDelete = notes.filter(n => n.folderId === folder.id);
-                                notesToDelete.forEach(n => {
-                                  if (user) deleteNote(user.uid, n.id);
-                                });
-                                if (activeFolderId === folder.id) {
-                                  setActiveFolderId('default');
-                                }
-                              }
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-opacity"
-                          >
-                            <Trash2 className="w-3 h-3 text-red-400" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Notes in current folder */}
-                      <AnimatePresence>
-                        {activeFolderId === folder.id && (
-                          <motion.div 
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden ml-4 mt-1 pl-2 border-l border-white/10 space-y-0.5"
-                          >
-                            {notes.filter(n => n.folderId === folder.id).map(note => (
-                              <div 
-                                key={note.id}
-                                onClick={() => setActiveNoteId(note.id)}
-                                className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer rounded-lg transition-colors group ${
-                                  activeNoteId === note.id ? 'bg-white/10 text-white' : 'text-neutral-500 hover:bg-white/5 hover:text-neutral-300'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 truncate">
-                                  <FileText className="w-3 h-3 shrink-0 opacity-50" />
-                                  <span className="truncate">{note.title || 'Untitled'}</span>
-                                </div>
-                                {activeNoteId === note.id && (
-                                  <button 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (user) deleteNote(user.uid, note.id);
-                                      const remainingNotes = notes.filter(n => n.id !== note.id);
-                                      if (activeNoteId === note.id) {
-                                        setActiveNoteId(remainingNotes.length > 0 ? remainingNotes[0].id : null);
-                                      }
-                                    }}
-                                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-opacity shrink-0"
-                                  >
-                                    <X className="w-3 h-3 text-red-400" />
-                                  </button>
-                                )}
-                              </div>
-                            ))}
-                            <button 
-                              onClick={() => {
-                                const newNote: Note = {
-                                  id: generateId(),
-                                  title: 'Untitled Note',
-                                  content: '',
-                                  lastModified: Date.now(),
-                                  folderId: activeFolderId || 'default'
-                                };
-                                setActiveNoteId(newNote.id);
-                                if (user) saveNote(user.uid, newNote);
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 text-neutral-500 hover:text-blue-400 hover:bg-blue-600/10 rounded-lg transition-colors mt-1"
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span>New Note</span>
-                            </button>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* Editor Content */}
               <div className="flex-1 flex flex-col relative bg-black">
                 {/* Top bar */}
-                <div className="flex items-center justify-end p-4 border-b border-white/5 gap-4">
-                  <AnimatePresence>
-                    {isSyncingFromCloud && (
-                      <motion.div
-                        key="syncing-from-cloud"
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="flex items-center gap-2 text-[10px] font-bold text-blue-400 uppercase tracking-widest bg-blue-400/10 px-3 py-1 rounded-full border border-blue-400/20"
+                <div className="flex items-center justify-between px-6 py-3 border-b border-white/5 bg-neutral-900/50 backdrop-blur-md sticky top-0 z-40">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    {/* Folder Dropdown Trigger */}
+                    <div className="relative">
+                      <button 
+                        onClick={() => setShowFolderDropdown(!showFolderDropdown)}
+                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-all border ${
+                          showFolderDropdown 
+                            ? 'bg-blue-600/20 border-blue-500/50 text-blue-400' 
+                            : 'bg-white/5 border-white/10 text-neutral-400 hover:bg-white/10 hover:text-white'
+                        }`}
+                        title="Folders"
                       >
-                        <History className="w-3 h-3 animate-spin" />
-                        Cloud Sync
-                      </motion.div>
-                    )}
-                    {isNoteSyncing ? (
-                      <motion.div 
-                        initial={{ opacity: 0, x: 10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 10 }}
-                        className="flex items-center justify-center text-blue-400 bg-blue-400/10 p-2 rounded-full border border-blue-400/20"
-                        title="Syncing..."
-                      >
-                        <History className="w-4 h-4 animate-spin" />
-                      </motion.div>
-                    ) : (
-                      isConnected && activeNoteId && (
-                          <button 
-                            onClick={() => {
-                              const note = notes.find(n => n.id === activeNoteId);
-                              if (note) syncNoteWithAI(note);
-                            }}
-                            className="flex items-center justify-center text-neutral-400 hover:text-blue-400 bg-white/5 hover:bg-blue-400/10 p-2 rounded-full border border-white/10 hover:border-blue-400/20 transition-all"
-                            title="Sync with AI now"
+                        <FolderIcon className="w-4 h-4" />
+                        <ChevronDown className={`w-3 h-3 transition-transform ${showFolderDropdown ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      <AnimatePresence>
+                        {showFolderDropdown && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-40" 
+                              onClick={() => setShowFolderDropdown(false)} 
+                            />
+                            <motion.div
+                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                              className="absolute top-full left-0 mt-2 w-72 bg-neutral-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[60vh]"
+                            >
+                              <div className="p-3 border-b border-white/5 flex items-center justify-between bg-black/20">
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Navigation</span>
+                                <button 
+                                  onClick={() => setIsCreatingFolder(true)}
+                                  className="p-1 hover:bg-blue-600/20 text-blue-400 rounded transition-colors"
+                                  title="New Folder"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                                {isCreatingFolder && (
+                                  <div className="px-2 py-2 mb-2 flex items-center gap-2 bg-black/20 rounded-lg border border-white/5">
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={newFolderName}
+                                      onChange={e => setNewFolderName(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter' && newFolderName.trim()) {
+                                          const newFolder: Folder = { id: generateId(), name: newFolderName.trim(), createdAt: Date.now() };
+                                          if (user) saveFolder(user.uid, newFolder);
+                                          setActiveFolderId(newFolder.id);
+                                          setNewFolderName('');
+                                          setIsCreatingFolder(false);
+                                        } else if (e.key === 'Escape') {
+                                          setNewFolderName('');
+                                          setIsCreatingFolder(false);
+                                        }
+                                      }}
+                                      placeholder="Folder name..."
+                                      className="flex-1 bg-transparent border-none px-1 text-sm text-white focus:outline-none min-w-0"
+                                    />
+                                    <button
+                                      onClick={() => {
+                                        if (newFolderName.trim()) {
+                                          const newFolder: Folder = { id: generateId(), name: newFolderName.trim(), createdAt: Date.now() };
+                                          if (user) saveFolder(user.uid, newFolder);
+                                          setActiveFolderId(newFolder.id);
+                                          setNewFolderName('');
+                                          setIsCreatingFolder(false);
+                                        }
+                                      }}
+                                      className="p-1 text-green-400 hover:bg-green-400/20 rounded shrink-0"
+                                    >
+                                      <Check className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
+
+                                {folders.map(folder => (
+                                  <div key={folder.id} className="mb-1">
+                                    <div 
+                                      onClick={() => {
+                                        if (activeFolderId !== folder.id) {
+                                          setActiveFolderId(folder.id);
+                                          const folderNotes = notes.filter(n => n.folderId === folder.id);
+                                          if (folderNotes.length > 0) {
+                                            setActiveNoteId(folderNotes[0].id);
+                                          } else {
+                                            setActiveNoteId(null);
+                                          }
+                                          handleDisconnect(true);
+                                        }
+                                      }}
+                                      className={`w-full text-left px-3 py-2 text-sm cursor-pointer flex items-center justify-between group transition-all rounded-lg ${
+                                        activeFolderId === folder.id ? 'bg-blue-600/20 text-blue-400 font-medium' : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 truncate">
+                                        <FolderIcon className={`w-4 h-4 ${activeFolderId === folder.id ? 'text-blue-400' : 'opacity-50'}`} />
+                                        <span className="truncate">{folder.name}</span>
+                                      </div>
+                                      {folder.id !== 'default' && (
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (confirm(`Delete folder "${folder.name}" and all its notes?`)) {
+                                              if (user) deleteFolder(user.uid, folder.id);
+                                              const notesToDelete = notes.filter(n => n.folderId === folder.id);
+                                              notesToDelete.forEach(n => {
+                                                if (user) deleteNote(user.uid, n.id);
+                                              });
+                                              if (activeFolderId === folder.id) {
+                                                setActiveFolderId('default');
+                                              }
+                                            }
+                                          }}
+                                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-opacity"
+                                        >
+                                          <Trash2 className="w-3 h-3 text-red-400" />
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {activeFolderId === folder.id && (
+                                      <div className="ml-4 mt-1 pl-2 border-l border-white/10 space-y-0.5">
+                                        {notes.filter(n => n.folderId === folder.id).map(note => (
+                                          <div 
+                                            key={note.id}
+                                            onClick={() => {
+                                              setActiveNoteId(note.id);
+                                              setShowFolderDropdown(false);
+                                            }}
+                                            className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer rounded-lg transition-colors group ${
+                                              activeNoteId === note.id ? 'bg-white/10 text-white' : 'text-neutral-500 hover:bg-white/5 hover:text-neutral-300'
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-2 truncate">
+                                              <FileText className="w-3 h-3 shrink-0 opacity-50" />
+                                              <span className="truncate">{note.title || 'Untitled'}</span>
+                                            </div>
+                                            {activeNoteId === note.id && (
+                                              <button 
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (user) deleteNote(user.uid, note.id);
+                                                  const remainingNotes = notes.filter(n => n.id !== note.id);
+                                                  if (activeNoteId === note.id) {
+                                                    setActiveNoteId(remainingNotes.length > 0 ? remainingNotes[0].id : null);
+                                                  }
+                                                }}
+                                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-opacity shrink-0"
+                                              >
+                                                <X className="w-3 h-3 text-red-400" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        ))}
+                                        <button 
+                                          onClick={() => {
+                                            const newNote: Note = {
+                                              id: generateId(),
+                                              title: 'Untitled Note',
+                                              content: '',
+                                              lastModified: Date.now(),
+                                              folderId: activeFolderId || 'default'
+                                            };
+                                            setActiveNoteId(newNote.id);
+                                            if (user) saveNote(user.uid, newNote);
+                                            setShowFolderDropdown(false);
+                                          }}
+                                          className="w-full text-left px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 text-neutral-500 hover:text-blue-400 hover:bg-blue-600/10 rounded-lg transition-colors mt-1"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                          <span>New Note</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </motion.div>
+                          </>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Recent Notes Tabs */}
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar flex-1">
+                      <div className="h-4 w-px bg-white/10 mx-2 shrink-0" />
+                      {recentNoteIds.map(noteId => {
+                        const note = notes.find(n => n.id === noteId);
+                        if (!note) return null;
+                        return (
+                          <button
+                            key={noteId}
+                            onClick={() => setActiveNoteId(noteId)}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap border ${
+                              activeNoteId === noteId
+                                ? 'bg-white/10 border-white/20 text-white'
+                                : 'bg-transparent border-transparent text-neutral-500 hover:text-neutral-300 hover:bg-white/5'
+                            }`}
                           >
-                            <History className="w-4 h-4" />
+                            <FileText className="w-3 h-3 opacity-50" />
+                            <span className="max-w-[100px] truncate">{note.title || 'Untitled'}</span>
                           </button>
-                      )
-                    )}
-                  </AnimatePresence>
-                  <button 
-                    onClick={() => setShowEditor(false)}
-                    className="p-2 text-neutral-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0 ml-4">
+                    <AnimatePresence>
+                      {isSyncingFromCloud && (
+                        <motion.div
+                          key="syncing-from-cloud"
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="flex items-center gap-2 text-[10px] font-bold text-blue-400 uppercase tracking-widest bg-blue-400/10 px-3 py-1 rounded-full border border-blue-400/20"
+                        >
+                          <History className="w-3 h-3 animate-spin" />
+                          Cloud Sync
+                        </motion.div>
+                      )}
+                      {isNoteSyncing ? (
+                        <motion.div 
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 10 }}
+                          className="flex items-center justify-center text-blue-400 bg-blue-400/10 p-2 rounded-full border border-blue-400/20"
+                          title="Syncing..."
+                        >
+                          <History className="w-4 h-4 animate-spin" />
+                        </motion.div>
+                      ) : (
+                        isConnected && activeNoteId && (
+                            <button 
+                              onClick={() => {
+                                const note = notes.find(n => n.id === activeNoteId);
+                                if (note) syncNoteWithAI(note);
+                              }}
+                              className="flex items-center justify-center text-neutral-400 hover:text-blue-400 bg-white/5 hover:bg-blue-400/10 p-2 rounded-full border border-white/10 hover:border-blue-400/20 transition-all"
+                              title="Sync with AI now"
+                            >
+                              <History className="w-4 h-4" />
+                            </button>
+                        )
+                      )}
+                    </AnimatePresence>
+                    <button 
+                      onClick={() => setShowEditor(false)}
+                      className="p-2 text-neutral-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-1 flex flex-col p-6 overflow-hidden relative">
