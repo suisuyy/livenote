@@ -5,17 +5,14 @@ import Image from 'next/image';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, ThinkingLevel } from '@google/genai';
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioStreamPlayer, AudioRecorder, createWavUrl } from '@/lib/audio';
-import { Mic, MicOff, Video, VideoOff, Send, Phone, PhoneOff, Loader2, Settings, Volume2, X, ChevronDown, Plus, Trash2, MessageSquareText, MessageSquare, Camera, Image as ImageIcon, Film, Download, Eye, Bookmark, Check, FileText, Edit3, Save, History, Folder as FolderIcon, LogOut } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Send, Phone, PhoneOff, Loader2, Settings, Volume2, X, ChevronDown, Plus, Trash2, MessageSquareText, MessageSquare, Camera, Image as ImageIcon, Film, Download, Eye, Bookmark, Check, FileText, Edit3, History, Folder as FolderIcon, LogOut } from 'lucide-react';
 import MarkdownEditor from './MarkdownEditor';
 import { useAuth } from '@/hooks/use-auth';
 import { db, logout } from '@/lib/firebase';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDocs, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDocs, Timestamp } from 'firebase/firestore';
 import { 
-  initDB, 
   saveFolderLocal, 
-  getFoldersLocal, 
   saveNoteLocal, 
-  getNotesLocal, 
   deleteFolderLocal, 
   deleteNoteLocal, 
   saveGalleryItemLocal, 
@@ -110,7 +107,7 @@ const formatSize = (bytes?: number) => {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 };
 
-import { diffLines, Change } from 'diff';
+import { diffLines } from 'diff';
 
 function renderDiff(oldText: string, newText: string) {
   const changes = diffLines(oldText, newText);
@@ -216,7 +213,7 @@ const checkIsSilence = (text: string) => {
   try {
     const cleaned = text.trim().replace(/[^\p{L}\p{N}]/gu, '');
     return cleaned.length === 0;
-  } catch (e) {
+  } catch {
     // Fallback for environments that don't support unicode property escapes
     const cleaned = text.trim().replace(/[^a-zA-Z0-9]/g, '');
     return cleaned.length === 0;
@@ -262,7 +259,6 @@ export default function LiveChat({
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-  const [showFolderList, setShowFolderList] = useState(false);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [editProposal, setEditProposal] = useState<NoteEditProposal | null>(null);
   const [recentShot, setRecentShot] = useState<string | null>(null);
@@ -764,7 +760,7 @@ export default function LiveChat({
     }
   };
 
-  const handleShotDown = (e: React.MouseEvent | React.TouchEvent) => {
+  const handleShotDown = () => {
     if (!isConnected) return;
     setRecordingStartTime(Date.now());
     longPressTimerRef.current = setTimeout(() => {
@@ -1215,7 +1211,6 @@ export default function LiveChat({
           },
           onmessage: async (message: LiveServerMessage) => {
             const parts = message.serverContent?.modelTurn?.parts;
-            const outputTranscription = message.serverContent?.outputTranscription;
             const turnComplete = message.serverContent?.turnComplete;
             const interrupted = message.serverContent?.interrupted;
 
@@ -1663,6 +1658,8 @@ If the user asks to open a specific note by name or ID, use the 'openNote' tool.
 
 When you receive a message starting with '[SYSTEM] User Selection', it means the user has highlighted text for your context. Respond ONLY by repeating the selected text exactly as it was provided. Do not add any other text, commentary, or prefixes.
 
+When you receive a message starting with '[SYSTEM] Note Update', it means the user has switched or updated a note. Respond ONLY with 'ok'. Do not add any other text, commentary, or prefixes.
+
 Current Notes:
 ${notes.filter(n => n.folderId === (activeFolderId || 'default')).length > 0 ? notes.filter(n => n.folderId === (activeFolderId || 'default')).map(n => `ID: ${n.id}\nTitle: ${n.title}\nContent:\n${n.content}`).join('\n---\n') : 'No notes available.'}
 Active Note ID: ${activeNoteId || 'None'}`,
@@ -1678,7 +1675,7 @@ Active Note ID: ${activeNoteId || 'None'}`,
       console.error("Connection error:", err);
       handleDisconnect(false);
     }
-  }, [isConnecting, isConnected, selectedModel, selectedVoice, selectedImageModel, selectedThinkingLevel, handleDisconnect, startVideo, stopVideo, geminiApiKey, geminiApiUrl]);
+  }, [isConnecting, isConnected, selectedModel, selectedVoice, selectedImageModel, selectedThinkingLevel, handleDisconnect, startVideo, stopVideo, geminiApiKey, geminiApiUrl, activeFolderId, activeNoteId, notes, user]);
 
   const disconnect = () => {
     isIntentionalDisconnectRef.current = true;
@@ -2692,16 +2689,6 @@ Active Note ID: ${activeNoteId || 'None'}`,
           )}
           
           <form onSubmit={sendText} className="flex gap-2 items-center">
-            {user && (
-              <button 
-                type="button"
-                onClick={onToggleSidebar}
-                className="p-1 rounded-full hover:bg-neutral-800 transition-colors shrink-0"
-                title="Toggle Sidebar"
-              >
-                <img src={user.photoURL || ''} alt="Profile" className="w-8 h-8 rounded-full" />
-              </button>
-            )}
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -2749,6 +2736,17 @@ Active Note ID: ${activeNoteId || 'None'}`,
           </form>
 
           <div className="flex flex-wrap items-center justify-center gap-3 md:gap-4">
+            {user && (
+              <button 
+                type="button"
+                onClick={onToggleSidebar}
+                className="p-1 rounded-full hover:bg-neutral-800 transition-colors shrink-0"
+                title="Toggle Sidebar"
+              >
+                <img src={user.photoURL || ''} alt="Profile" className="w-10 h-10 rounded-full object-cover" />
+              </button>
+            )}
+
             <button 
               onMouseDown={handleShotDown}
               onMouseUp={handleShotUp}
@@ -3037,202 +3035,183 @@ Active Note ID: ${activeNoteId || 'None'}`,
               initial={{ scale: 0.95, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 20 }}
-              className="bg-black border border-white/10 w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+              className="bg-black border border-white/10 w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-              {/* Tabs */}
-              <div className="flex items-center bg-black/40 border-b border-white/10 relative">
-                {/* Folder Selector */}
-                <div className="relative shrink-0 border-r border-white/10">
+              {/* Sidebar */}
+              <div className="w-64 bg-neutral-900/50 border-r border-white/10 flex flex-col shrink-0">
+                <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Folders</span>
                   <button 
-                    onClick={() => setShowFolderList(!showFolderList)}
-                    className={`flex items-center gap-2 px-4 py-3 transition-all hover:scale-[1.02] active:scale-[0.98] ${showFolderList ? 'bg-blue-600/20 text-blue-400' : 'text-neutral-400 hover:bg-white/5'}`}
-                    title="Folders"
+                    onClick={() => setIsCreatingFolder(true)}
+                    className="p-1.5 hover:bg-blue-600/20 text-blue-400 rounded-lg transition-colors"
+                    title="New Folder"
                   >
-                    <FolderIcon className="w-4 h-4" />
-                    <span className="text-sm font-bold max-w-[80px] truncate">
-                      {folders.find(f => f.id === activeFolderId)?.name || 'Folders'}
-                    </span>
-                    <ChevronDown className={`w-3 h-3 transition-transform ${showFolderList ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  <AnimatePresence>
-                    {showFolderList && (
-                      <motion.div 
-                        key="folder-list"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute top-full left-0 w-64 bg-neutral-900 border border-white/10 shadow-2xl z-50 rounded-b-xl overflow-hidden"
-                      >
-                        <div className="p-2 border-b border-white/5 bg-black/20 flex items-center justify-between">
-                          <span className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold px-2">Your Folders</span>
-                          <button 
-                            onClick={() => setIsCreatingFolder(true)}
-                            className="p-1 hover:bg-blue-600/20 text-blue-400 rounded transition-colors"
-                            title="New Folder"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto py-1">
-                          {isCreatingFolder ? (
-                            <div className="px-4 py-2 flex items-center gap-2 border-b border-white/5">
-                              <input
-                                autoFocus
-                                type="text"
-                                value={newFolderName}
-                                onChange={e => setNewFolderName(e.target.value)}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter' && newFolderName.trim()) {
-                                    const newFolder: Folder = { id: generateId(), name: newFolderName.trim(), createdAt: Date.now() };
-                                    if (user) saveFolder(user.uid, newFolder);
-                                    setActiveFolderId(newFolder.id);
-                                    setNewFolderName('');
-                                    setIsCreatingFolder(false);
-                                  } else if (e.key === 'Escape') {
-                                    setNewFolderName('');
-                                    setIsCreatingFolder(false);
-                                  }
-                                }}
-                                placeholder="Folder name..."
-                                className="flex-1 bg-black/50 border border-white/10 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 min-w-0"
-                              />
-                              <button
-                                onClick={() => {
-                                  if (newFolderName.trim()) {
-                                    const newFolder: Folder = { id: generateId(), name: newFolderName.trim(), createdAt: Date.now() };
-                                    if (user) saveFolder(user.uid, newFolder);
-                                    setActiveFolderId(newFolder.id);
-                                    setNewFolderName('');
-                                    setIsCreatingFolder(false);
-                                  }
-                                }}
-                                className="p-1 text-green-400 hover:bg-green-400/20 rounded shrink-0"
-                              >
-                                <Check className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setNewFolderName('');
-                                  setIsCreatingFolder(false);
-                                }}
-                                className="p-1 text-neutral-400 hover:bg-white/10 rounded shrink-0"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <button 
-                              onClick={() => setIsCreatingFolder(true)}
-                              className="w-full text-left px-4 py-2 text-sm cursor-pointer flex items-center gap-2 text-blue-400 hover:bg-blue-600/10 transition-colors border-b border-white/5"
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span className="font-medium">Create New Folder</span>
-                            </button>
-                          )}
-                          {folders.map(folder => (
-                            <div 
-                              key={folder.id}
-                              onClick={() => {
-                                setActiveFolderId(folder.id);
-                                setShowFolderList(false);
-                                // Filter notes for this folder and set active note
-                                const folderNotes = notes.filter(n => n.folderId === folder.id);
-                                if (folderNotes.length > 0) {
-                                  setActiveNoteId(folderNotes[0].id);
-                                } else {
-                                  setActiveNoteId(null);
-                                }
-                                // Reconnect to update AI context
-                                handleDisconnect(true);
-                              }}
-                              className={`px-4 py-2 text-sm cursor-pointer flex items-center justify-between group transition-colors ${
-                                activeFolderId === folder.id ? 'bg-blue-600/10 text-blue-400' : 'text-neutral-400 hover:bg-white/5'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 truncate">
-                                <FolderIcon className="w-3 h-3 opacity-50" />
-                                <span className="truncate">{folder.name}</span>
-                              </div>
-                              {folder.id !== 'default' && (
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (confirm(`Delete folder "${folder.name}" and all its notes?`)) {
-                                      if (user) deleteFolder(user.uid, folder.id);
-                                      // Also delete notes in this folder
-                                      const notesToDelete = notes.filter(n => n.folderId === folder.id);
-                                      notesToDelete.forEach(n => {
-                                        if (user) deleteNote(user.uid, n.id);
-                                      });
-                                      if (activeFolderId === folder.id) {
-                                        setActiveFolderId('default');
-                                      }
-                                    }
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-opacity"
-                                >
-                                  <Trash2 className="w-3 h-3 text-red-400" />
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {/* Note Tabs */}
-                <div className="flex-1 flex items-center overflow-x-auto scrollbar-hide">
-                  {notes.filter(n => n.folderId === activeFolderId).map(note => (
-                    <div 
-                      key={note.id}
-                      onClick={() => setActiveNoteId(note.id)}
-                      className={`flex items-center gap-2 px-4 py-3 cursor-pointer border-r border-white/5 transition-colors min-w-[120px] max-w-[200px] shrink-0 group ${
-                        activeNoteId === note.id ? 'bg-blue-600/10 text-blue-400' : 'text-neutral-400 hover:bg-white/5'
-                      }`}
-                    >
-                      <FileText className="w-4 h-4 shrink-0" />
-                      <span className="text-sm font-medium truncate flex-1">{note.title}</span>
-                      {activeNoteId === note.id && (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (user) deleteNote(user.uid, note.id);
-                              const remainingNotes = notes.filter(n => n.id !== note.id);
-                              if (activeNoteId === note.id) {
-                                setActiveNoteId(remainingNotes.length > 0 ? remainingNotes[0].id : null);
-                              }
-                            }}
-                            className="p-1 hover:bg-red-500/20 rounded transition-colors shrink-0"
-                          >
-                            <X className="w-3 h-3 text-red-400" />
-                          </button>
-                      )}
-                    </div>
-                  ))}
-                  <button 
-                    onClick={() => {
-                      const newNote: Note = {
-                        id: generateId(),
-                        title: 'Untitled Note',
-                        content: '',
-                        lastModified: Date.now(),
-                        folderId: activeFolderId || 'default'
-                      };
-                      setActiveNoteId(newNote.id);
-                      if (user) saveNote(user.uid, newNote);
-                    }}
-                    className="shrink-0 p-3 text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
-                    title="New Note"
-                  >
-                    <Plus className="w-5 h-5" />
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
                 
-                <div className="shrink-0 ml-auto px-4 flex items-center gap-4 border-l border-white/10">
+                <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                  {isCreatingFolder && (
+                    <div className="px-2 py-2 mb-2 flex items-center gap-2 bg-black/20 rounded-lg border border-white/5">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={newFolderName}
+                        onChange={e => setNewFolderName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && newFolderName.trim()) {
+                            const newFolder: Folder = { id: generateId(), name: newFolderName.trim(), createdAt: Date.now() };
+                            if (user) saveFolder(user.uid, newFolder);
+                            setActiveFolderId(newFolder.id);
+                            setNewFolderName('');
+                            setIsCreatingFolder(false);
+                          } else if (e.key === 'Escape') {
+                            setNewFolderName('');
+                            setIsCreatingFolder(false);
+                          }
+                        }}
+                        placeholder="Folder name..."
+                        className="flex-1 bg-transparent border-none px-1 text-sm text-white focus:outline-none min-w-0"
+                      />
+                      <button
+                        onClick={() => {
+                          if (newFolderName.trim()) {
+                            const newFolder: Folder = { id: generateId(), name: newFolderName.trim(), createdAt: Date.now() };
+                            if (user) saveFolder(user.uid, newFolder);
+                            setActiveFolderId(newFolder.id);
+                            setNewFolderName('');
+                            setIsCreatingFolder(false);
+                          }
+                        }}
+                        className="p-1 text-green-400 hover:bg-green-400/20 rounded shrink-0"
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setNewFolderName('');
+                          setIsCreatingFolder(false);
+                        }}
+                        className="p-1 text-neutral-400 hover:bg-white/10 rounded shrink-0"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  {folders.map(folder => (
+                    <div key={folder.id} className="mb-1">
+                      <div 
+                        onClick={() => {
+                          if (activeFolderId !== folder.id) {
+                            setActiveFolderId(folder.id);
+                            const folderNotes = notes.filter(n => n.folderId === folder.id);
+                            if (folderNotes.length > 0) {
+                              setActiveNoteId(folderNotes[0].id);
+                            } else {
+                              setActiveNoteId(null);
+                            }
+                            handleDisconnect(true);
+                          }
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm cursor-pointer flex items-center justify-between group transition-all rounded-lg ${
+                          activeFolderId === folder.id ? 'bg-blue-600/20 text-blue-400 font-medium' : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <FolderIcon className={`w-4 h-4 ${activeFolderId === folder.id ? 'text-blue-400' : 'opacity-50'}`} />
+                          <span className="truncate">{folder.name}</span>
+                        </div>
+                        {folder.id !== 'default' && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`Delete folder "${folder.name}" and all its notes?`)) {
+                                if (user) deleteFolder(user.uid, folder.id);
+                                const notesToDelete = notes.filter(n => n.folderId === folder.id);
+                                notesToDelete.forEach(n => {
+                                  if (user) deleteNote(user.uid, n.id);
+                                });
+                                if (activeFolderId === folder.id) {
+                                  setActiveFolderId('default');
+                                }
+                              }
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-opacity"
+                          >
+                            <Trash2 className="w-3 h-3 text-red-400" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Notes in current folder */}
+                      <AnimatePresence>
+                        {activeFolderId === folder.id && (
+                          <motion.div 
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden ml-4 mt-1 pl-2 border-l border-white/10 space-y-0.5"
+                          >
+                            {notes.filter(n => n.folderId === folder.id).map(note => (
+                              <div 
+                                key={note.id}
+                                onClick={() => setActiveNoteId(note.id)}
+                                className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer rounded-lg transition-colors group ${
+                                  activeNoteId === note.id ? 'bg-white/10 text-white' : 'text-neutral-500 hover:bg-white/5 hover:text-neutral-300'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 truncate">
+                                  <FileText className="w-3 h-3 shrink-0 opacity-50" />
+                                  <span className="truncate">{note.title || 'Untitled'}</span>
+                                </div>
+                                {activeNoteId === note.id && (
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (user) deleteNote(user.uid, note.id);
+                                      const remainingNotes = notes.filter(n => n.id !== note.id);
+                                      if (activeNoteId === note.id) {
+                                        setActiveNoteId(remainingNotes.length > 0 ? remainingNotes[0].id : null);
+                                      }
+                                    }}
+                                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-opacity shrink-0"
+                                  >
+                                    <X className="w-3 h-3 text-red-400" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button 
+                              onClick={() => {
+                                const newNote: Note = {
+                                  id: generateId(),
+                                  title: 'Untitled Note',
+                                  content: '',
+                                  lastModified: Date.now(),
+                                  folderId: activeFolderId || 'default'
+                                };
+                                setActiveNoteId(newNote.id);
+                                if (user) saveNote(user.uid, newNote);
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 text-neutral-500 hover:text-blue-400 hover:bg-blue-600/10 rounded-lg transition-colors mt-1"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>New Note</span>
+                            </button>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Editor Content */}
+              <div className="flex-1 flex flex-col relative bg-black">
+                {/* Top bar */}
+                <div className="flex items-center justify-end p-4 border-b border-white/5 gap-4">
                   <AnimatePresence>
                     {isSyncingFromCloud && (
                       <motion.div
@@ -3273,79 +3252,78 @@ Active Note ID: ${activeNoteId || 'None'}`,
                   </AnimatePresence>
                   <button 
                     onClick={() => setShowEditor(false)}
-                    className="p-2 text-neutral-400 hover:text-white transition-colors"
+                    className="p-2 text-neutral-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
-              </div>
 
-              {/* Editor Content */}
-              <div className="flex-1 flex flex-col p-6 overflow-hidden relative">
-                {activeNoteId ? (
-                  <>
-                    <input 
-                      type="text"
-                      value={notes.find(n => n.id === activeNoteId)?.title || ''}
-                      onChange={(e) => {
-                        const newNotes = notes.map(n => n.id === activeNoteId ? { ...n, title: e.target.value, lastModified: Date.now() } : n);
-                        setNotes(newNotes);
-                        const updatedNote = newNotes.find(n => n.id === activeNoteId);
-                        if (user && updatedNote) saveNote(user.uid, updatedNote);
-                      }}
-                      className="bg-transparent text-2xl font-bold text-white mb-4 outline-none border-b border-transparent focus:border-blue-500/50 pb-2 transition-colors"
-                      placeholder="Note Title"
-                    />
-                    <MarkdownEditor 
-                      content={notes.find(n => n.id === activeNoteId)?.content || ''}
-                      onChange={(newContent) => {
-                        const newNotes = notes.map(n => n.id === activeNoteId ? { ...n, content: newContent, lastModified: Date.now() } : n);
-                        setNotes(newNotes);
-                        const updatedNote = newNotes.find(n => n.id === activeNoteId);
-                        if (user && updatedNote) saveNote(user.uid, updatedNote);
-                      }}
-                      onSelect={(text) => {
-                        setSelectedText(text);
-                      }}
-                      placeholder="Double click to write your Markdown note here..."
-                    />
-                    <AnimatePresence>
-                      {isSelectionSyncing && (
-                        <motion.div 
-                          key="selection-syncing"
-                          initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                          className="absolute bottom-10 right-10 z-30 bg-blue-600/90 text-white text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full border border-blue-400/30 flex items-center gap-2 shadow-2xl backdrop-blur-md"
-                        >
-                          <Eye className="w-4 h-4" />
-                          AI is reading selection...
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-neutral-500 gap-4">
-                    <FileText className="w-16 h-16 opacity-20" />
-                    <p>No notes yet. Create one to get started!</p>
-                    <button 
-                      onClick={() => {
-                        const newNote: Note = {
-                          id: generateId(),
-                          title: 'Untitled Note',
-                          content: '',
-                          lastModified: Date.now(),
-                          folderId: activeFolderId || 'default'
-                        };
-                        setActiveNoteId(newNote.id);
-                        if (user) saveNote(user.uid, newNote);
-                      }}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-500 transition-colors"
-                    >
-                      Create First Note
-                    </button>
-                  </div>
-                )}
+                <div className="flex-1 flex flex-col p-6 overflow-hidden relative">
+                  {activeNoteId ? (
+                    <>
+                      <input 
+                        type="text"
+                        value={notes.find(n => n.id === activeNoteId)?.title || ''}
+                        onChange={(e) => {
+                          const newNotes = notes.map(n => n.id === activeNoteId ? { ...n, title: e.target.value, lastModified: Date.now() } : n);
+                          setNotes(newNotes);
+                          const updatedNote = newNotes.find(n => n.id === activeNoteId);
+                          if (user && updatedNote) saveNote(user.uid, updatedNote);
+                        }}
+                        className="bg-transparent text-2xl font-bold text-white mb-4 outline-none border-b border-transparent focus:border-blue-500/50 pb-2 transition-colors"
+                        placeholder="Note Title"
+                      />
+                      <MarkdownEditor 
+                        content={notes.find(n => n.id === activeNoteId)?.content || ''}
+                        onChange={(newContent) => {
+                          const newNotes = notes.map(n => n.id === activeNoteId ? { ...n, content: newContent, lastModified: Date.now() } : n);
+                          setNotes(newNotes);
+                          const updatedNote = newNotes.find(n => n.id === activeNoteId);
+                          if (user && updatedNote) saveNote(user.uid, updatedNote);
+                        }}
+                        onSelect={(text) => {
+                          setSelectedText(text);
+                        }}
+                        placeholder="Double click to write your Markdown note here..."
+                      />
+                      <AnimatePresence>
+                        {isSelectionSyncing && (
+                          <motion.div 
+                            key="selection-syncing"
+                            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                            className="absolute bottom-10 right-10 z-30 bg-blue-600/90 text-white text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full border border-blue-400/30 flex items-center gap-2 shadow-2xl backdrop-blur-md"
+                          >
+                            <Eye className="w-4 h-4" />
+                            AI is reading selection...
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-neutral-500 gap-4">
+                      <FileText className="w-16 h-16 opacity-20" />
+                      <p>No notes yet. Create one to get started!</p>
+                      <button 
+                        onClick={() => {
+                          const newNote: Note = {
+                            id: generateId(),
+                            title: 'Untitled Note',
+                            content: '',
+                            lastModified: Date.now(),
+                            folderId: activeFolderId || 'default'
+                          };
+                          setActiveNoteId(newNote.id);
+                          if (user) saveNote(user.uid, newNote);
+                        }}
+                        className="px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-500 transition-colors"
+                      >
+                        Create First Note
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {/* Edit Proposal Overlay */}
                 <AnimatePresence>

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { Music, Film, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { Music, ExternalLink, Image as ImageIcon } from 'lucide-react';
 
 interface MarkdownEditorProps {
   content: string;
@@ -145,7 +145,7 @@ export default function MarkdownEditor({ content, onChange, onSelect, placeholde
                 const text = target.value.substring(target.selectionStart, target.selectionEnd);
                 if (onSelect) onSelect(text);
               }}
-              className="w-full bg-transparent text-white outline-none border-none resize-none text-base leading-relaxed p-2 block"
+              className="w-full bg-transparent text-white outline-none border-none resize-none text-base leading-relaxed p-2 block selection:bg-green-500/40 selection:text-white"
               rows={1}
               autoFocus
               style={{ height: 'auto', overflow: 'hidden' }}
@@ -156,29 +156,32 @@ export default function MarkdownEditor({ content, onChange, onSelect, placeholde
               }}
             />
           ) : (
-            <div className="prose prose-invert max-w-none p-2 hover:bg-white/5 rounded-lg transition-all cursor-text min-h-[1.5rem] break-words prose-p:text-white prose-headings:text-white prose-strong:text-white prose-ul:text-white prose-ol:text-white prose-li:text-white text-white">
+            <div className="prose prose-invert max-w-none p-2 hover:bg-white/5 rounded-lg transition-all cursor-text min-h-[1.5rem] break-words prose-p:text-white prose-headings:text-white prose-strong:text-white prose-ul:text-white prose-ol:text-white prose-li:text-white text-white selection:bg-green-500/40 selection:text-white relative">
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                Double click to edit
+              </div>
               <ReactMarkdown 
                 remarkPlugins={[remarkGfm]} 
                 rehypePlugins={[rehypeRaw]}
                 components={{
                   p: ({ children }) => <span className="m-0">{children}</span>,
-                  iframe: ({ node, ...props }) => (
+                  iframe: ({ ...props }) => (
                     <div className="my-4 rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-black">
                       <iframe {...props} className="w-full aspect-video" />
                     </div>
                   ),
-                  audio: ({ node, ...props }) => (
+                  audio: ({ ...props }) => (
                     <div className="my-4 p-4 bg-neutral-800/50 rounded-2xl border border-white/10 flex items-center gap-4">
                       <Music className="w-6 h-6 text-blue-400" />
                       <audio {...props} controls className="flex-1 h-8" />
                     </div>
                   ),
-                  video: ({ node, ...props }) => (
+                  video: ({ ...props }) => (
                     <div className="my-4 rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-black">
                       <video {...props} controls className="w-full max-h-[500px]" />
                     </div>
                   ),
-                  img: ({ node, ...props }) => (
+                  img: ({ ...props }) => (
                     <div className="my-4 relative group inline-block">
                       <img {...props} className="max-w-full rounded-2xl border border-white/10 shadow-xl" referrerPolicy="no-referrer" />
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-2xl pointer-events-none">
@@ -186,7 +189,7 @@ export default function MarkdownEditor({ content, onChange, onSelect, placeholde
                       </div>
                     </div>
                   ),
-                  a: ({ node, ...props }) => (
+                  a: ({ ...props }) => (
                     <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline inline-flex items-center gap-1">
                       {props.children}
                       <ExternalLink className="w-3 h-3" />

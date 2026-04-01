@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { loginWithGoogle, logout, db } from '@/lib/firebase';
 import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, orderBy, getDoc, serverTimestamp } from 'firebase/firestore';
-import { Folder, FileText, LogOut, Settings, Plus, Upload, Trash2, Image as ImageIcon, File as FileIcon, MessageSquare, Menu } from 'lucide-react';
+import { Folder, FileText, LogOut, Settings, Plus, Upload, Trash2, File as FileIcon, MessageSquare } from 'lucide-react';
 import { uploadFileWithDeduplication } from '@/lib/storage';
 import LiveChat from '@/components/LiveChat';
 import { 
@@ -12,7 +12,6 @@ import {
   getNotesLocal, 
   saveFolderLocal, 
   saveNoteLocal, 
-  deleteFolderLocal, 
   deleteNoteLocal 
 } from '@/lib/db';
 

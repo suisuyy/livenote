@@ -5,7 +5,7 @@ import path from 'path'
 
 const logEnvPlugin = () => ({
   name: 'log-env',
-  configResolved(config: any) {
+  configResolved() {
     console.log('Vite config resolved. NEXT_PUBLIC_GEMINI_API_KEY:', process.env.NEXT_PUBLIC_GEMINI_API_KEY ? 'Set' : 'Not set')
     console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'Set' : 'Not set')
     console.log('API_KEY:', process.env.API_KEY ? 'Set' : 'Not set')
