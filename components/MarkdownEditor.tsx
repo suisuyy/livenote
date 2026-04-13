@@ -15,6 +15,7 @@ interface MarkdownEditorProps {
 
 export default function MarkdownEditor({ content, onChange, onSelect, placeholder }: MarkdownEditorProps) {
   const [focusedLineIndex, setFocusedLineIndex] = useState<number | null>(null);
+  const [selectedLineIndex, setSelectedLineIndex] = useState<number | null>(null);
   const lines = useMemo(() => (content || '').split('\n'), [content]);
   const inputRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
@@ -114,11 +115,19 @@ export default function MarkdownEditor({ content, onChange, onSelect, placeholde
   }
 
   return (
-    <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-0.5">
-      {lines.map((line, index) => (
+    <div className="flex flex-col h-full flex-1 overflow-hidden">
+      <div 
+        className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-0.5"
+        onClick={() => setSelectedLineIndex(null)}
+      >
+        {lines.map((line, index) => (
         <div 
           key={index} 
           className={`relative min-h-[1.5rem] group transition-all duration-200 ${focusedLineIndex === index ? 'bg-white/5 rounded-lg' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedLineIndex(index);
+          }}
           onDoubleClick={(e) => {
             e.stopPropagation();
             setFocusedLineIndex(index);
@@ -157,9 +166,6 @@ export default function MarkdownEditor({ content, onChange, onSelect, placeholde
             />
           ) : (
             <div className="prose prose-invert max-w-none p-2 hover:bg-white/5 rounded-lg transition-all cursor-text min-h-[1.5rem] break-words prose-p:text-white prose-headings:text-white prose-strong:text-white prose-ul:text-white prose-ol:text-white prose-li:text-white text-white selection:bg-green-500/40 selection:text-white relative">
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                Double click to edit
-              </div>
               <ReactMarkdown 
                 remarkPlugins={[remarkGfm]} 
                 rehypePlugins={[rehypeRaw]}
@@ -203,6 +209,7 @@ export default function MarkdownEditor({ content, onChange, onSelect, placeholde
           )}
         </div>
       ))}
+      </div>
     </div>
   );
 }

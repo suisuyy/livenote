@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, ThinkingLevel } from '@google/genai';
 import { motion, AnimatePresence } from 'motion/react';
@@ -258,8 +258,14 @@ export default function LiveChat({
   const [newFolderName, setNewFolderName] = useState('');
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('activeFolderId');
+    return null;
+  });
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('activeNoteId');
+    return null;
+  });
   const [recentNoteIds, setRecentNoteIds] = useState<string[]>([]);
   const [showFolderDropdown, setShowFolderDropdown] = useState(false);
   const [editProposal, setEditProposal] = useState<NoteEditProposal | null>(null);
@@ -267,8 +273,33 @@ export default function LiveChat({
   const lastSyncedNoteContentRef = useRef<Record<string, string>>({});
   const lastSyncedNoteIdRef = useRef<string | null>(null);
   const [latestGeneratedImage, setLatestGeneratedImage] = useState<string | null>(null);
+  const [generatingImagePrompt, setGeneratingImagePrompt] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState(false);
-  const [showLargeGeneratedImage, setShowLargeGeneratedImage] = useState(false);
+  const [largeViewerImage, setLargeViewerImage] = useState<string | null>(null);
+  const [showNewMessageArrow, setShowNewMessageArrow] = useState(false);
+  const arrowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const chatImages = useMemo(() => {
+    return messages.filter(m => m.imageUrl).map(m => m.imageUrl as string);
+  }, [messages]);
+
+  const handlePrevImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!largeViewerImage) return;
+    const idx = chatImages.indexOf(largeViewerImage);
+    if (idx > 0) {
+      setLargeViewerImage(chatImages[idx - 1]);
+    }
+  };
+
+  const handleNextImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!largeViewerImage) return;
+    const idx = chatImages.indexOf(largeViewerImage);
+    if (idx !== -1 && idx < chatImages.length - 1) {
+      setLargeViewerImage(chatImages[idx + 1]);
+    }
+  };
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [isSyncingFromCloud, setIsSyncingFromCloud] = useState(false);
@@ -278,6 +309,9 @@ export default function LiveChat({
   const [isRecordingVideo, setIsRecordingVideo] = useState(false);
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
   const [selectedGalleryItem, setSelectedGalleryItem] = useState<any | null>(null);
+  const isInitialFoldersLoadedRef = useRef(false);
+  const isInitialNotesLoadedRef = useRef(false);
+  const initialConnectDoneRef = useRef(false);
 
   useEffect(() => {
     if (activeNoteId) {
@@ -288,37 +322,45 @@ export default function LiveChat({
     }
   }, [activeNoteId]);
 
+  // Filter recent notes when folder changes to only show notes from the current folder
+  useEffect(() => {
+    setRecentNoteIds(prev => {
+      const currentFolderNoteIds = new Set(
+        notes
+          .filter(n => n.folderId === (activeFolderId || 'default'))
+          .map(n => n.id)
+      );
+      return prev.filter(id => currentFolderNoteIds.has(id));
+    });
+  }, [activeFolderId, notes]);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<Blob[]>([]);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [isAutoTrimEnabled, setIsAutoTrimEnabled] = useState(false);
+  const [isAutoTrimEnabled, setIsAutoTrimEnabled] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('isAutoTrimEnabled') === 'true';
+    return false;
+  });
   
   // Settings
-  const [selectedVoice, setSelectedVoice] = useState('Zephyr');
-  const [selectedModel, setSelectedModel] = useState('gemini-3.1-flash-live-preview');
-  const [selectedImageModel, setSelectedImageModel] = useState('gemini-2.5-flash-image');
-  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState<ThinkingLevel>(ThinkingLevel.LOW);
+  const [selectedVoice, setSelectedVoice] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('selectedVoice') || 'Zephyr';
+    return 'Zephyr';
+  });
+  const [selectedModel, setSelectedModel] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('selectedModel') || 'gemini-3.1-flash-live-preview';
+    return 'gemini-3.1-flash-live-preview';
+  });
+  const [selectedImageModel, setSelectedImageModel] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('selectedImageModel') || 'gemini-2.5-flash-image';
+    return 'gemini-2.5-flash-image';
+  });
+  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState<ThinkingLevel>(() => {
+    if (typeof window !== 'undefined') return (localStorage.getItem('selectedThinkingLevel') as ThinkingLevel) || ThinkingLevel.LOW;
+    return ThinkingLevel.LOW;
+  });
 
-  // Load settings from localStorage on mount
-  useEffect(() => {
-    try {
-      const savedVoice = localStorage.getItem('selectedVoice');
-      const savedModel = localStorage.getItem('selectedModel');
-      const savedImageModel = localStorage.getItem('selectedImageModel');
-      const savedThinkingLevel = localStorage.getItem('selectedThinkingLevel');
-      const savedAutoTrim = localStorage.getItem('isAutoTrimEnabled');
-
-      if (savedVoice) setSelectedVoice(savedVoice);
-      if (savedModel) setSelectedModel(savedModel);
-      if (savedImageModel) setSelectedImageModel(savedImageModel);
-      if (savedThinkingLevel) setSelectedThinkingLevel(savedThinkingLevel as ThinkingLevel);
-      if (savedAutoTrim) setIsAutoTrimEnabled(savedAutoTrim === 'true');
-    } catch (e) {
-      console.error('Failed to load settings', e);
-    }
-  }, []);
-
-  // Save settings to localStorage when they change
+  // Save settings and active state to localStorage when they change
   useEffect(() => {
     try {
       localStorage.setItem('selectedVoice', selectedVoice);
@@ -326,10 +368,12 @@ export default function LiveChat({
       localStorage.setItem('selectedImageModel', selectedImageModel);
       localStorage.setItem('selectedThinkingLevel', selectedThinkingLevel);
       localStorage.setItem('isAutoTrimEnabled', isAutoTrimEnabled.toString());
+      if (activeFolderId) localStorage.setItem('activeFolderId', activeFolderId);
+      if (activeNoteId) localStorage.setItem('activeNoteId', activeNoteId);
     } catch (e) {
       console.error('Failed to save settings', e);
     }
-  }, [selectedVoice, selectedModel, selectedImageModel, selectedThinkingLevel, isAutoTrimEnabled]);
+  }, [selectedVoice, selectedModel, selectedImageModel, selectedThinkingLevel, isAutoTrimEnabled, activeFolderId, activeNoteId]);
 
   const prevVoiceRef = useRef(selectedVoice);
   const prevModelRef = useRef(selectedModel);
@@ -498,10 +542,14 @@ export default function LiveChat({
         saveFolder(user.uid, defaultFolder);
       } else {
         setFolders(uniqueFolders);
-        if (!activeFolderIdRef.current) {
-          setActiveFolderId(uniqueFolders[0].id);
+        if (!isInitialFoldersLoadedRef.current) {
+          const folderExists = uniqueFolders.some(f => f.id === activeFolderIdRef.current);
+          if (!activeFolderIdRef.current || !folderExists) {
+            setActiveFolderId(uniqueFolders[0].id);
+          }
         }
       }
+      isInitialFoldersLoadedRef.current = true;
     });
 
     const notesRef = collection(db, 'users', user.uid, 'notes');
@@ -526,10 +574,16 @@ export default function LiveChat({
       uniqueNotes.forEach(n => saveNoteLocal(n));
 
       setNotes(uniqueNotes);
-      if (!activeNoteIdRef.current && uniqueNotes.length > 0) {
-        const folderId = activeFolderIdRef.current || uniqueNotes[0].folderId;
-        const firstNote = uniqueNotes.find(n => n.folderId === folderId);
-        if (firstNote) setActiveNoteId(firstNote.id);
+      if (!isInitialNotesLoadedRef.current) {
+        if (uniqueNotes.length > 0) {
+          const noteExists = uniqueNotes.some(n => n.id === activeNoteIdRef.current);
+          if (!activeNoteIdRef.current || !noteExists) {
+            const folderId = activeFolderIdRef.current || uniqueNotes[0].folderId;
+            const firstNote = uniqueNotes.find(n => n.folderId === folderId);
+            if (firstNote) setActiveNoteId(firstNote.id);
+          }
+        }
+        isInitialNotesLoadedRef.current = true;
       }
     });
 
@@ -570,7 +624,16 @@ export default function LiveChat({
   }, [isAutoTrimEnabled]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.isSilence) return;
+
+      setShowNewMessageArrow(true);
+      if (arrowTimeoutRef.current) clearTimeout(arrowTimeoutRef.current);
+      arrowTimeoutRef.current = setTimeout(() => {
+        setShowNewMessageArrow(false);
+      }, 3000);
+    }
   }, [messages]);
 
   // Send newly uploaded images to the session so the model can "see" them
@@ -967,14 +1030,34 @@ export default function LiveChat({
     }
 
     try {
-      const apiKey = geminiApiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      const baseUrl = geminiApiUrl || 'https://generativelanguage.googleapis.com';
-      const ai = new GoogleGenAI({ 
+      const apiKey = geminiApiKey?.trim() || process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
+      const options: any = { 
         apiKey,
-        httpOptions: {
-          baseUrl
+        vertexai: false
+      };
+      
+      // Clean up the URL to avoid double slashes and ensure consistency
+      let cleanApiUrl = geminiApiUrl?.trim();
+      if (cleanApiUrl && cleanApiUrl.endsWith('/')) {
+        cleanApiUrl = cleanApiUrl.slice(0, -1);
+      }
+
+      if (geminiApiKey?.trim()) {
+        // If user provided their own API key, always respect their URL choice
+        // even if it's the default Google one, to ensure we bypass the proxy.
+        // We use the cleaned URL to avoid double slashes in the final WebSocket URL.
+        options.httpOptions = { 
+          baseUrl: cleanApiUrl || 'https://generativelanguage.googleapis.com'
+        };
+      } else {
+        // If using the injected API key, only override if it's a custom URL.
+        // The default Google URL needs to be ignored so the proxy is used.
+        if (cleanApiUrl && cleanApiUrl !== 'https://generativelanguage.googleapis.com') {
+          options.httpOptions = { baseUrl: cleanApiUrl };
         }
-      });
+      }
+      
+      const ai = new GoogleGenAI(options);
       
       const generateImageTool = {
         functionDeclarations: [
@@ -988,6 +1071,10 @@ export default function LiveChat({
                   type: Type.STRING,
                   description: 'A detailed description of the image to generate or the modifications to apply to the uploaded image. Be specific about what to add, remove, or change.',
                 },
+                editPreviousImage: {
+                  type: Type.BOOLEAN,
+                  description: 'Set to true ONLY if the user explicitly asks to edit, change, or modify the previously generated image. Set to false if they want a completely new image.',
+                }
               },
               required: ['prompt'],
             },
@@ -1512,7 +1599,7 @@ export default function LiveChat({
                 }
 
                 if (call.name === 'generateImage') {
-                  const { prompt } = call.args as any;
+                  const { prompt, editPreviousImage } = call.args as any;
                   
                     const imageMsgId = generateId();
                     setMessages(prev => [...prev, {
@@ -1523,6 +1610,7 @@ export default function LiveChat({
                       isAudio: false,
                       isComplete: false
                     }]);
+                    setGeneratingImagePrompt(prompt);
 
                     try {
                       const parts: any[] = [];
@@ -1539,8 +1627,8 @@ export default function LiveChat({
                         });
                       });
 
-                      // If no pending images, check if we can use the last generated image
-                      if (parts.length === 0 && lastGeneratedImageUrlRef.current) {
+                      // If no pending images, check if we can use the last generated image AND the user requested it
+                      if (parts.length === 0 && lastGeneratedImageUrlRef.current && editPreviousImage) {
                         const img = lastGeneratedImageUrlRef.current;
                         if (img.startsWith('data:')) {
                           const base64Data = img.split(',')[1];
@@ -1577,6 +1665,7 @@ export default function LiveChat({
                       if (imageUrl) {
                         lastGeneratedImageUrlRef.current = imageUrl;
                         setLatestGeneratedImage(imageUrl);
+                        setGeneratingImagePrompt(null);
                         setMessages(prev => prev.map(m => m.id === imageMsgId ? {
                           ...m,
                           text: parts.length > 1 ? `Edited image based on: "${prompt}"` : `Generated image for: "${prompt}"`,
@@ -1599,10 +1688,12 @@ export default function LiveChat({
                         });
                       });
                     } else {
+                      setGeneratingImagePrompt(null);
                       throw new Error('No image data in response');
                     }
                   } catch (err) {
                     console.error('Image generation error:', err);
+                    setGeneratingImagePrompt(null);
                     setMessages(prev => prev.map(m => m.id === imageMsgId ? {
                       ...m,
                       text: `Failed to generate image: ${err instanceof Error ? err.message : String(err)}`,
@@ -1652,18 +1743,22 @@ export default function LiveChat({
             handleDisconnect(false);
           }
         },
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } },
-          },
-          systemInstruction: `You are a helpful assistant. You can see the user if they enable their camera. You can also think before you speak. You have tools to generate or edit images, control the camera, show/hide the transcription, and manage Markdown notes. 
+        config: (() => {
+          const cfg: any = {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } },
+            },
+            systemInstruction: `You are a helpful assistant. You can see the user if they enable their camera. You can also think before you speak. You have tools to generate or edit images, control the camera, show/hide the transcription, and manage Markdown notes. 
 
-If the user uploads an image and asks to change, edit, or modify it, use the 'generateImage' tool. 
+IMPORTANT: Do NOT edit notes or generate images proactively or unprompted. ONLY use the 'editNote' or 'generateImage' tools if the user EXPLICITLY asks you to do so.
+ALSO IMPORTANT: When you decide to use the 'editNote' or 'generateImage' tools, you MUST first reply to the user with a short message acknowledging the action (e.g., "Ok, I will generate the image" or "Ok, I will edit the note now") BEFORE calling the tool. This provides immediate feedback to the user.
+
+If the user EXPLICITLY asks to generate an image, or uploads an image and EXPLICITLY asks to change, edit, or modify it, use the 'generateImage' tool. 
 If the user asks to open/enable or close/disable the camera, use the 'setCameraState' tool. 
 If the user asks to show or hide the transcription/text history, use the 'setTranscriptionState' tool.
 If the user asks to create a new note, use the 'createNote' tool.
-If the user asks to update, change, or add to their existing notes, use the 'editNote' tool. You MUST use the exact ID provided in the 'Current Notes' section or in a '[SYSTEM] Note Update' message.
+If the user EXPLICITLY asks to update, change, or add to their existing notes, use the 'editNote' tool. You MUST use the exact ID provided in the 'Current Notes' section or in a '[SYSTEM] Note Update' message.
 If the user asks to open, show, or hide the note editor, use the 'toggleEditor' tool.
 If the user asks to open a specific note by name or ID, use the 'openNote' tool.
 
@@ -1674,11 +1769,15 @@ When you receive a message starting with '[SYSTEM] Note Update', it means the us
 Current Notes:
 ${notes.filter(n => n.folderId === (activeFolderId || 'default')).length > 0 ? notes.filter(n => n.folderId === (activeFolderId || 'default')).map(n => `ID: ${n.id}\nTitle: ${n.title}\nContent:\n${n.content}`).join('\n---\n') : 'No notes available.'}
 Active Note ID: ${activeNoteId || 'None'}`,
-          outputAudioTranscription: {},
-          inputAudioTranscription: {},
-          thinkingConfig: { thinkingLevel: selectedThinkingLevel },
-          tools: [generateImageTool, setCameraStateTool, setTranscriptionStateTool, editNoteTool, createNoteTool, toggleEditorTool, openNoteTool],
-        },
+            outputAudioTranscription: {},
+            inputAudioTranscription: {},
+            tools: [generateImageTool, setCameraStateTool, setTranscriptionStateTool, editNoteTool, createNoteTool, toggleEditorTool, openNoteTool],
+          };
+          if (selectedModel.startsWith('gemini-3')) {
+            cfg.thinkingConfig = { thinkingLevel: selectedThinkingLevel };
+          }
+          return cfg;
+        })(),
       });
 
       sessionRef.current = sessionPromise;
@@ -1749,8 +1848,14 @@ Active Note ID: ${activeNoteId || 'None'}`,
     setPendingImages([]);
   };
 
-  // Auto-reconnect when voice, model, image model, thinking level, folder, or API settings change while connected
+  // Auto-connect when voice, model, image model, thinking level, folder, or API settings change while connected
+  // Also auto-connect on initial load once notes are ready
   useEffect(() => {
+    if (user && isInitialFoldersLoadedRef.current && isInitialNotesLoadedRef.current && !isConnected && !isConnecting && !initialConnectDoneRef.current) {
+      connectRef.current();
+      initialConnectDoneRef.current = true;
+    }
+
     const voiceChanged = prevVoiceRef.current !== selectedVoice;
     const modelChanged = prevModelRef.current !== selectedModel;
     const imageModelChanged = prevImageModelRef.current !== selectedImageModel;
@@ -1782,7 +1887,7 @@ Active Note ID: ${activeNoteId || 'None'}`,
     prevFolderIdRef.current = activeFolderId;
     prevGeminiApiKeyRef.current = geminiApiKey;
     prevGeminiApiUrlRef.current = geminiApiUrl;
-  }, [selectedVoice, selectedModel, selectedImageModel, selectedThinkingLevel, activeFolderId, isConnected, handleDisconnect, geminiApiKey, geminiApiUrl]);
+  }, [selectedVoice, selectedModel, selectedImageModel, selectedThinkingLevel, activeFolderId, isConnected, isConnecting, handleDisconnect, geminiApiKey, geminiApiUrl, user, notes.length, folders.length]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1845,8 +1950,8 @@ Active Note ID: ${activeNoteId || 'None'}`,
   }, [showAudioMenu, showVideoMenu]);
 
   useEffect(() => {
-    // Auto-connect on mount
-    connectRef.current();
+    // Auto-connect on mount is now handled by the effect above that waits for initial load
+    // connectRef.current();
     
     return () => {
       // Cleanup on unmount
@@ -1876,17 +1981,26 @@ Active Note ID: ${activeNoteId || 'None'}`,
     <div className={`relative flex flex-col h-full w-full overflow-hidden transition-colors duration-500 ${isConnected ? (theme === 'light' ? 'bg-neutral-50' : 'bg-black') : (theme === 'light' ? 'bg-neutral-200' : 'bg-neutral-900')}`}>
       {/* Latest Generated Image Mini View */}
       <AnimatePresence>
-        {latestGeneratedImage && (
+        {(latestGeneratedImage || generatingImagePrompt) && (
           <motion.div
             key="latest-generated-image"
             initial={{ opacity: 0, x: -20, scale: 0.9 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
             exit={{ opacity: 0, x: -20, scale: 0.9 }}
-            className="absolute top-4 left-4 z-40 rounded-xl overflow-hidden border-2 border-blue-500/50 shadow-2xl shadow-blue-500/10 cursor-pointer group"
-            onClick={() => setShowLargeGeneratedImage(true)}
+            className="absolute top-4 left-4 z-[120] rounded-xl overflow-hidden border-2 border-blue-500/50 shadow-2xl shadow-blue-500/10 cursor-pointer group bg-black w-[120px] h-[90px] flex items-center justify-center"
+            onClick={() => {
+              if (latestGeneratedImage) setLargeViewerImage(latestGeneratedImage);
+            }}
           >
-            <Image src={latestGeneratedImage} alt="Latest generated" width={120} height={90} className="object-cover transition-transform duration-300 group-hover:scale-110" unoptimized />
-            <button
+            {generatingImagePrompt ? (
+              <div className="flex flex-col items-center justify-center p-2 text-center w-full h-full">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-1"></div>
+                <span className="text-[8px] text-white/70 line-clamp-2 leading-tight">{generatingImagePrompt}</span>
+              </div>
+            ) : latestGeneratedImage ? (
+              <>
+                <Image src={latestGeneratedImage} alt="Latest generated" width={120} height={90} className="object-cover transition-transform duration-300 group-hover:scale-110 w-full h-full" unoptimized />
+                <button
               onClick={(e) => {
                 e.stopPropagation();
                 setLatestGeneratedImage(null);
@@ -1952,34 +2066,36 @@ Active Note ID: ${activeNoteId || 'None'}`,
             >
               <MessageSquare className="w-3 h-3" />
             </button>
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 pointer-events-none">
               <Eye className="w-4 h-4 text-white" />
               <span className="text-white text-xs font-medium">View</span>
             </div>
+            </>
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Large Generated Image Modal */}
       <AnimatePresence>
-        {showLargeGeneratedImage && latestGeneratedImage && (
+        {largeViewerImage && (
           <motion.div
             key="large-generated-image"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
-            onClick={() => setShowLargeGeneratedImage(false)}
+            className="absolute inset-0 z-[130] flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
+            onClick={() => setLargeViewerImage(null)}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative max-w-5xl w-full max-h-[90vh] flex items-center justify-center"
+              className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center justify-center"
               onClick={(e) => e.stopPropagation()}
             >
               <Image 
-                src={latestGeneratedImage} 
+                src={largeViewerImage} 
                 alt="Large generated view" 
                 width={1920} 
                 height={1080} 
@@ -1990,7 +2106,7 @@ Active Note ID: ${activeNoteId || 'None'}`,
                 <button
                   onClick={async () => {
                     try {
-                      const response = await fetch(latestGeneratedImage);
+                      const response = await fetch(largeViewerImage);
                       const blob = await response.blob();
                       await navigator.clipboard.write([
                         new ClipboardItem({ [blob.type]: blob })
@@ -2008,8 +2124,8 @@ Active Note ID: ${activeNoteId || 'None'}`,
                 </button>
                 <button
                   onClick={() => {
-                    if (!pendingImages.includes(latestGeneratedImage)) {
-                      setPendingImages(prev => [...prev, latestGeneratedImage]);
+                    if (!pendingImages.includes(largeViewerImage)) {
+                      setPendingImages(prev => [...prev, largeViewerImage]);
                     }
                   }}
                   className="p-3 bg-black/50 hover:bg-blue-500 text-white rounded-full backdrop-blur-md transition-all"
@@ -2020,7 +2136,7 @@ Active Note ID: ${activeNoteId || 'None'}`,
                 <button
                   onClick={() => {
                     const a = document.createElement('a');
-                    a.href = latestGeneratedImage;
+                    a.href = largeViewerImage;
                     a.download = `ai_image_${Date.now()}.png`;
                     a.click();
                   }}
@@ -2030,7 +2146,7 @@ Active Note ID: ${activeNoteId || 'None'}`,
                   <Download className="w-6 h-6" />
                 </button>
                 <button
-                  onClick={() => saveToGallery(latestGeneratedImage)}
+                  onClick={() => saveToGallery(largeViewerImage)}
                   className={`p-3 rounded-full text-white backdrop-blur-md transition-all ${
                     isSaved ? 'bg-green-500' : 'bg-black/50 hover:bg-blue-500'
                   }`}
@@ -2041,8 +2157,10 @@ Active Note ID: ${activeNoteId || 'None'}`,
                 </button>
                 <button
                   onClick={() => {
-                    setLatestGeneratedImage(null);
-                    setShowLargeGeneratedImage(false);
+                    if (latestGeneratedImage === largeViewerImage) {
+                      setLatestGeneratedImage(null);
+                    }
+                    setLargeViewerImage(null);
                   }}
                   className="p-3 bg-black/50 hover:bg-red-500 text-white rounded-full backdrop-blur-md transition-all"
                   title="Dismiss Image"
@@ -2050,13 +2168,33 @@ Active Note ID: ${activeNoteId || 'None'}`,
                   <Trash2 className="w-6 h-6" />
                 </button>
                 <button
-                  onClick={() => setShowLargeGeneratedImage(false)}
+                  onClick={() => setLargeViewerImage(null)}
                   className="p-3 bg-black/50 hover:bg-black/80 text-white rounded-full backdrop-blur-md transition-colors"
                   title="Close"
                 >
                   <X className="w-6 h-6" />
                 </button>
               </div>
+              
+              {/* Prev / Next Buttons */}
+              {chatImages.length > 1 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4">
+                  <button
+                    onClick={handlePrevImage}
+                    disabled={chatImages.indexOf(largeViewerImage) <= 0}
+                    className="p-3 bg-black/50 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-black/50 text-white rounded-full backdrop-blur-md transition-all"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                  </button>
+                  <button
+                    onClick={handleNextImage}
+                    disabled={chatImages.indexOf(largeViewerImage) === -1 || chatImages.indexOf(largeViewerImage) >= chatImages.length - 1}
+                    className="p-3 bg-black/50 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-black/50 text-white rounded-full backdrop-blur-md transition-all"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                  </button>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -2200,14 +2338,14 @@ Active Note ID: ${activeNoteId || 'None'}`,
                             </div>
                           )}
                           {msg.imageUrl && showTranscription && (
-                            <div className="mt-3 rounded-xl overflow-hidden border border-neutral-700/50 bg-neutral-900/40 shadow-2xl group relative">
+                            <div className="mt-3 rounded-xl overflow-hidden border border-neutral-700/50 bg-neutral-900/40 shadow-2xl group relative cursor-pointer" onClick={() => setLargeViewerImage(msg.imageUrl!)}>
                               <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10" />
                               <Image 
                                 src={msg.imageUrl} 
                                 alt="Generated content" 
                                 width={800} 
                                 height={600} 
-                                className="w-full h-auto object-contain max-h-[65vh] transition-transform duration-500 group-hover:scale-[1.02]" 
+                                className="w-full object-contain h-[30vh] transition-transform duration-500 group-hover:scale-[1.02]" 
                                 referrerPolicy="no-referrer"
                                 unoptimized
                               />
@@ -2351,6 +2489,23 @@ Active Note ID: ${activeNoteId || 'None'}`,
           )}
             <div ref={messagesEndRef} />
           </div>
+          <AnimatePresence>
+            {showNewMessageArrow && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50"
+              >
+                <button
+                  onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                  className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2 shadow-lg flex items-center justify-center animate-bounce"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -3039,7 +3194,7 @@ Active Note ID: ${activeNoteId || 'None'}`,
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={() => setShowEditor(false)}
           >
             <motion.div 
@@ -3316,18 +3471,21 @@ Active Note ID: ${activeNoteId || 'None'}`,
                 <div className="flex-1 flex flex-col p-6 overflow-hidden relative">
                   {activeNoteId ? (
                     <>
-                      <input 
-                        type="text"
-                        value={notes.find(n => n.id === activeNoteId)?.title || ''}
-                        onChange={(e) => {
-                          const newNotes = notes.map(n => n.id === activeNoteId ? { ...n, title: e.target.value, lastModified: Date.now() } : n);
-                          setNotes(newNotes);
-                          const updatedNote = newNotes.find(n => n.id === activeNoteId);
-                          if (user && updatedNote) saveNote(user.uid, updatedNote);
-                        }}
-                        className="bg-transparent text-2xl font-bold text-white mb-4 outline-none border-b border-transparent focus:border-blue-500/50 pb-2 transition-colors"
-                        placeholder="Note Title"
-                      />
+                      <div className="flex items-center justify-between mb-4 border-b border-transparent focus-within:border-blue-500/50 pb-2 transition-colors">
+                        <input 
+                          type="text"
+                          value={notes.find(n => n.id === activeNoteId)?.title || ''}
+                          onChange={(e) => {
+                            const newNotes = notes.map(n => n.id === activeNoteId ? { ...n, title: e.target.value, lastModified: Date.now() } : n);
+                            setNotes(newNotes);
+                            const updatedNote = newNotes.find(n => n.id === activeNoteId);
+                            if (user && updatedNote) saveNote(user.uid, updatedNote);
+                          }}
+                          className="bg-transparent text-2xl font-bold text-white outline-none flex-1"
+                          placeholder="Note Title"
+                        />
+                        <span className="text-xs text-neutral-500 italic ml-4">Double click any line to edit</span>
+                      </div>
                       <MarkdownEditor 
                         content={notes.find(n => n.id === activeNoteId)?.content || ''}
                         onChange={(newContent) => {

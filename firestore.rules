@@ -54,8 +54,9 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "woiceatus@gmail.com" && request.auth.token.email_verified == true));
+        (request.auth.token.email == "woiceatus@gmail.com" && request.auth.token.email_verified == true ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
 
     function isValidEmail(email) {
@@ -77,33 +78,38 @@ service cloud.firestore {
 
     function isValidUser() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['email', 'role', 'storageUsed', 'settings', 'createdAt']) &&
+      return hasOnlyAllowedFields(['email', 'role', 'storageUsed', 'settings', 'createdAt', 'updatedAt', 'displayName', 'photoURL']) &&
              hasRequiredFields(['email', 'role', 'storageUsed', 'createdAt']) &&
              isValidEmail(data.email) &&
              data.role in ['admin', 'user'] &&
              data.storageUsed is number && data.storageUsed >= 0 &&
              data.createdAt is timestamp &&
-             (!('settings' in data) || data.settings is map);
+             (!('updatedAt' in data) || data.updatedAt is timestamp) &&
+             (!('settings' in data) || data.settings is map) &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('photoURL' in data) || data.photoURL is string);
     }
 
     function isValidFolder() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['name', 'createdAt']) &&
+      return hasOnlyAllowedFields(['id', 'name', 'createdAt', 'updatedAt']) &&
              hasRequiredFields(['name', 'createdAt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.createdAt is timestamp;
+             data.createdAt is timestamp &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
     function isValidNote() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['folderId', 'title', 'content', 'attachments', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['id', 'folderId', 'title', 'content', 'attachments', 'createdAt', 'updatedAt', 'lastModified']) &&
              hasRequiredFields(['folderId', 'title', 'content', 'createdAt', 'updatedAt']) &&
              data.folderId is string && data.folderId.size() > 0 && data.folderId.size() < 100 &&
              data.title is string && data.title.size() >= 0 && data.title.size() < 200 &&
              data.content is string && data.content.size() >= 0 && data.content.size() < 100000 &&
              data.createdAt is timestamp &&
              data.updatedAt is timestamp &&
-             (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 50));
+             (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 50)) &&
+             (!('lastModified' in data) || data.lastModified is number);
     }
 
     function isValidFileRecord() {

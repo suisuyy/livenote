@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { loginWithGoogle, logout, db } from '@/lib/firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, orderBy, getDoc, serverTimestamp } from 'firebase/firestore';
-import { Folder, FileText, LogOut, Settings, Plus, Upload, Trash2, File as FileIcon, MessageSquare } from 'lucide-react';
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, setDoc, orderBy, getDoc, serverTimestamp } from 'firebase/firestore';
+import { Folder as FolderIcon, FileText, LogOut, Settings, Plus, Upload, Trash2, File as FileIcon, MessageSquare } from 'lucide-react';
 import { uploadFileWithDeduplication } from '@/lib/storage';
 import LiveChat from '@/components/LiveChat';
 import { 
@@ -12,15 +12,17 @@ import {
   getNotesLocal, 
   saveFolderLocal, 
   saveNoteLocal, 
-  deleteNoteLocal 
+  deleteNoteLocal,
+  type Note,
+  type Folder
 } from '@/lib/db';
 
 export default function Dashboard() {
   const { user, loading, storageUsed, loginAsGuest, logoutGuest } = useAuth();
-  const [folders, setFolders] = useState<any[]>([]);
-  const [notes, setNotes] = useState<any[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [selectedNote, setSelectedNote] = useState<any | null>(null);
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [theme, setTheme] = useState('dark');
   const [geminiApiKey, setGeminiApiKey] = useState('');
@@ -44,7 +46,7 @@ export default function Dashboard() {
       const foldersRef = collection(db, 'users', user.uid, 'folders');
       const qFolders = query(foldersRef, orderBy('createdAt', 'desc'));
       const unsubFolders = onSnapshot(qFolders, (snapshot) => {
-        setFolders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setFolders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Folder)));
       }, (error) => {
         console.error("Folders snapshot error:", error);
       });
@@ -52,7 +54,7 @@ export default function Dashboard() {
       const notesRef = collection(db, 'users', user.uid, 'notes');
       const qNotes = query(notesRef, orderBy('updatedAt', 'desc'));
       const unsubNotes = onSnapshot(qNotes, (snapshot) => {
-        setNotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setNotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Note)));
       }, (error) => {
         console.error("Notes snapshot error:", error);
       });
@@ -89,9 +91,9 @@ export default function Dashboard() {
     setGeminiApiUrl(newApiUrl);
 
     if (!user.isGuest) {
-      await updateDoc(doc(db, 'users', user.uid), {
+      await setDoc(doc(db, 'users', user.uid), {
         settings: { theme: newTheme, geminiApiKey: newApiKey, geminiApiUrl: newApiUrl }
-      });
+      }, { merge: true });
     } else {
       localStorage.setItem('guestSettings', JSON.stringify({ theme: newTheme, geminiApiKey: newApiKey, geminiApiUrl: newApiUrl }));
     }
@@ -157,6 +159,7 @@ export default function Dashboard() {
       folderId: selectedFolder,
       title,
       content: "",
+      lastModified: Date.now(),
       attachments: [],
       createdAt: user.isGuest ? new Date() : serverTimestamp(),
       updatedAt: user.isGuest ? new Date() : serverTimestamp()
@@ -173,7 +176,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleUpdateNote = async (id: string, updates: any) => {
+  const handleUpdateNote = async (id: string, updates: Partial<Note>) => {
     if (!user.isGuest) {
       await updateDoc(doc(db, 'users', user.uid, 'notes', id), {
         ...updates,
@@ -212,8 +215,8 @@ export default function Dashboard() {
       
       await handleUpdateNote(selectedNote.id, { attachments: newAttachments });
       setSelectedNote({ ...selectedNote, attachments: newAttachments });
-    } catch (error: any) {
-      alert(error.message);
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : String(error));
     } finally {
       setIsUploading(false);
       e.target.value = '';
@@ -314,7 +317,7 @@ export default function Dashboard() {
                     : (theme === 'light' ? 'text-neutral-600 hover:bg-neutral-200' : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-white')
                 }`}
               >
-                <Folder className="w-4 h-4" />
+                <FolderIcon className="w-4 h-4" />
                 <span className="truncate">{folder.name}</span>
               </button>
             ))}
@@ -420,7 +423,7 @@ export default function Dashboard() {
                 
                 {selectedNote.attachments && selectedNote.attachments.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    {selectedNote.attachments.map((file: any, index: number) => (
+                    {selectedNote.attachments.map((file, index) => (
                       <a key={index} href={file.url} target="_blank" rel="noopener noreferrer" className="block group">
                         <div className={`border rounded-lg p-3 transition-colors ${theme === 'light' ? 'bg-neutral-50 border-neutral-200 hover:border-neutral-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}`}>
                           <div className={`w-full aspect-square rounded mb-2 flex items-center justify-center overflow-hidden ${theme === 'light' ? 'bg-neutral-200' : 'bg-neutral-900'}`}>

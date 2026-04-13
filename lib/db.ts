@@ -1,8 +1,26 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // IndexedDB Utility for permanent storage
 const DB_NAME = 'LiveChatGallery';
 const STORE_NAME = 'items';
 const NOTES_STORE = 'notes';
 const FOLDERS_STORE = 'folders';
+const FILES_STORE = 'files';
+
+export interface GalleryItem {
+  id: string;
+  type: string;
+  url: string;
+  timestamp: number;
+  size?: number;
+  resolution?: string;
+}
+
+export interface FileAttachment {
+  name: string;
+  url: string;
+  size: number;
+  mimeType: string;
+}
 
 export interface Note {
   id: string;
@@ -12,12 +30,29 @@ export interface Note {
   lastModified: number;
   createdAt?: any;
   updatedAt?: any;
+  attachments?: FileAttachment[];
 }
 
 export interface Folder {
   id: string;
   name: string;
   createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface FileItem {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  url: string;
+  folderId: string;
+  createdAt: number;
+  metadata?: {
+    width?: number;
+    height?: number;
+    duration?: number;
+  };
 }
 
 export async function initDB() {
@@ -33,6 +68,9 @@ export async function initDB() {
       }
       if (!db.objectStoreNames.contains(FOLDERS_STORE)) {
         db.createObjectStore(FOLDERS_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(FILES_STORE)) {
+        db.createObjectStore(FILES_STORE, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -106,7 +144,40 @@ export async function deleteNoteLocal(id: string) {
   });
 }
 
-export async function saveGalleryItemLocal(item: any) {
+export async function saveFileLocal(file: FileItem) {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(FILES_STORE, 'readwrite');
+    const store = transaction.objectStore(FILES_STORE);
+    const request = store.put(file);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getFilesLocal() {
+  const db = await initDB();
+  return new Promise<FileItem[]>((resolve, reject) => {
+    const transaction = db.transaction(FILES_STORE, 'readonly');
+    const store = transaction.objectStore(FILES_STORE);
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function deleteFileLocal(id: string) {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(FILES_STORE, 'readwrite');
+    const store = transaction.objectStore(FILES_STORE);
+    const request = store.delete(id);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function saveGalleryItemLocal(item: GalleryItem) {
   const db = await initDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite');
@@ -119,7 +190,7 @@ export async function saveGalleryItemLocal(item: any) {
 
 export async function getGalleryItemsLocal() {
   const db = await initDB();
-  return new Promise<any[]>((resolve, reject) => {
+  return new Promise<GalleryItem[]>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly');
     const store = transaction.objectStore(STORE_NAME);
     const request = store.getAll();

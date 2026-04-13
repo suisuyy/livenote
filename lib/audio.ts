@@ -58,7 +58,8 @@ export class AudioStreamPlayer {
 
   private initContext() {
     if (!this.context) {
-      this.context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      this.context = new AudioContextClass({ sampleRate: 24000 });
     }
   }
 
@@ -129,7 +130,8 @@ export class AudioRecorder {
     };
     
     this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-    this.context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    this.context = new AudioContextClass({ sampleRate: 16000 });
 
     const workletCode = `
       class PCMRecorderProcessor extends AudioWorkletProcessor {
